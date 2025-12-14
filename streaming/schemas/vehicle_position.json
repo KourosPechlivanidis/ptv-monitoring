@@ -1,0 +1,139 @@
+{
+  "type": "struct",
+  "fields": [
+    {
+      "name": "mode",
+      "type": "string",
+      "nullable": true,
+      "metadata": {}
+    },
+    {
+      "name": "header",
+      "type": {
+        "type": "struct",
+        "fields": [
+          {
+            "name": "gtfs_realtime_version",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "incrementality",
+            "type": "long",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "timestamp",
+            "type": "long",
+            "nullable": true,
+            "metadata": {}
+          }
+        ]
+      },
+      "nullable": true,
+      "metadata": {}
+    },
+    {
+      "name": "entity_id",
+      "type": "string",
+      "nullable": true,
+      "metadata": {}
+    },
+    {
+      "name": "vehicle",
+      "type": {
+        "type": "struct",
+        "fields": [
+          {
+            "name": "trip",
+            "type": {
+              "type": "struct",
+              "fields": [
+                {
+                  "name": "trip_id",
+                  "type": "string",
+                  "nullable": true,
+                  "metadata": {}
+                },
+                {
+                  "name": "route_id",
+                  "type": "string",
+                  "nullable": true,
+                  "metadata": {}
+                },
+                {
+                  "name": "start_time",
+                  "type": "string",
+                  "nullable": true,
+                  "metadata": {}
+                },
+                {
+                  "name": "start_date",
+                  "type": "string",
+                  "nullable": true,
+                  "metadata": {}
+                }
+              ]
+            },
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "vehicle",
+            "type": {
+              "type": "struct",
+              "fields": [
+                {
+                  "name": "vehicle_id",
+                  "type": "string",
+                  "nullable": true,
+                  "metadata": {}
+                },
+                {
+                  "name": "label",
+                  "type": "string",
+                  "nullable": true,
+                  "metadata": {}
+                }
+              ]
+            },
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "position",
+            "type": {
+              "type": "struct",
+              "fields": [
+                {
+                  "name": "latitude",
+                  "type": "double",
+                  "nullable": true,
+                  "metadata": {}
+                },
+                {
+                  "name": "longitude",
+                  "type": "double",
+                  "nullable": true,
+                  "metadata": {}
+                }
+              ]
+            },
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "timestamp",
+            "type": "long",
+            "nullable": true,
+            "metadata": {}
+          }
+        ]
+      },
+      "nullable": true,
+      "metadata": {}
+    }
+  ]
+}

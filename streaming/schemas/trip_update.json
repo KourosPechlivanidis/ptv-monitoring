@@ -1,0 +1,159 @@
+{
+  "type": "struct",
+  "fields": [
+    {
+      "name": "header",
+      "type": {
+        "type": "struct",
+        "fields": [
+          {
+            "name": "gtfs_realtime_version",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "incrementality",
+            "type": "integer",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "timestamp",
+            "type": "long",
+            "nullable": true,
+            "metadata": {}
+          }
+        ]
+      },
+      "nullable": true,
+      "metadata": {}
+    },
+    {
+      "name": "entity_id",
+      "type": "string",
+      "nullable": true,
+      "metadata": {}
+    },
+    {
+      "name": "mode",
+      "type": "string",
+      "nullable": true,
+      "metadata": {}
+    },
+    {
+      "name": "trip_update",
+      "type": {
+        "type": "struct",
+        "fields": [
+          {
+            "name": "trip",
+            "type": {
+              "type": "struct",
+              "fields": [
+                {
+                  "name": "trip_id",
+                  "type": "string",
+                  "nullable": true,
+                  "metadata": {}
+                },
+                {
+                  "name": "route_id",
+                  "type": "string",
+                  "nullable": true,
+                  "metadata": {}
+                },
+                {
+                  "name": "start_time",
+                  "type": "string",
+                  "nullable": true,
+                  "metadata": {}
+                },
+                {
+                  "name": "start_date",
+                  "type": "string",
+                  "nullable": true,
+                  "metadata": {}
+                },
+                {
+                  "name": "schedule_relationship",
+                  "type": "integer",
+                  "nullable": true,
+                  "metadata": {}
+                }
+              ]
+            },
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "stop_time_update",
+            "type": {
+              "type": "array",
+              "elementType": {
+                "type": "struct",
+                "fields": [
+                  {
+                    "name": "stop_sequence",
+                    "type": "integer",
+                    "nullable": true,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "arrival",
+                    "type": {
+                      "type": "struct",
+                      "fields": [
+                        {
+                          "name": "time",
+                          "type": "long",
+                          "nullable": true,
+                          "metadata": {}
+                        }
+                      ]
+                    },
+                    "nullable": true,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "departure",
+                    "type": {
+                      "type": "struct",
+                      "fields": [
+                        {
+                          "name": "time",
+                          "type": "long",
+                          "nullable": true,
+                          "metadata": {}
+                        }
+                      ]
+                    },
+                    "nullable": true,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "stop_id",
+                    "type": "string",
+                    "nullable": true,
+                    "metadata": {}
+                  },
+                  {
+                    "name": "schedule_relationship",
+                    "type": "integer",
+                    "nullable": true,
+                    "metadata": {}
+                  }
+                ]
+              },
+              "containsNull": true
+            },
+            "nullable": true,
+            "metadata": {}
+          }
+        ]
+      },
+      "nullable": true,
+      "metadata": {}
+    }
+  ]
+}
