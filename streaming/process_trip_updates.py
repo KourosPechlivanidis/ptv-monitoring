@@ -1,26 +1,27 @@
 import redis
 
 from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.functions import col, explode, to_date, to_unix_timestamp, to_utc_timestamp, concat_ws, split, lit, concat, date_add, lpad, when, desc, row_number
+from pyspark.sql.functions import col, explode, to_date, to_unix_timestamp, to_utc_timestamp, concat_ws, split, lit, concat, date_add, lpad, when, max
 from pyspark.sql import Window
 
 from utils import read_from_kafka, load_schema, parse_kafka_value
 
-def write_to_redis(batch_df: DataFrame, batch_id: int) -> None:
-    print(f"Writing batch id: {batch_id} to Redis")
-
+def write_to_redis(batch_df, batch_id):
     for row in batch_df.collect():
-        if row.trip_id is None or row.delay_seconds is None:
-            continue
         key = f"trip:{row.trip_id}"
-        redis_client.hset(key, mapping={"current_delay": row.delay_seconds})
+        last_stop = redis_client.hget(key, "last_stop_sequence")
+        if last_stop is None or (row.latest_stop_sequence is not None and row.latest_stop_sequence > int(last_stop)):
+            redis_client.hset(key, mapping={
+                "last_stop_sequence": row.latest_stop_sequence if row.latest_stop_sequence is not None else 0,
+                "delay_seconds": row.latest_delay_seconds if row.latest_delay_seconds is not None else 0,
+            })
 
-KAFKA_BOOTSTRAP_SERVERS = "localhost:9094"
-REDIS_HOST = "localhost"
+KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
+REDIS_HOST = "redis"
 REDIS_PORT = "6379"
 
 TOPIC = "trip_updates"
-SCHEMA_PATH = "schemas/trip_updates.json"
+SCHEMA_PATH = "schemas/trip_update.json"
 STATIC_PATHS = [
     "static/bus/stop_times.parquet",
     "static/metro/stop_times.parquet",
@@ -110,14 +111,17 @@ enriched_df = enriched_df.withColumn(
     "delay_seconds", col("stop_arrival_time") - col("arrival_time_posix") - 3600
 )
 
-w = Window.partitionBy("trip_id").orderBy(desc("stop_sequence"))
-latest_df = enriched_df.withColumn("rn", row_number().over(w)).filter(col("rn") == 1).drop("rn")
+latest_df = enriched_df.groupBy("trip_id").agg(
+    max("stop_sequence").alias("latest_stop_sequence"),
+    max("delay_seconds").alias("latest_delay_seconds"),
+)
 
 redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
 
 query = (
     latest_df.writeStream
     .foreachBatch(write_to_redis)
+    .outputMode("complete")
     .start()
 )
 

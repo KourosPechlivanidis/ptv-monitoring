@@ -43,9 +43,7 @@ services:
       start_period: 20s
   # initialise topics
   init-kafka:
-    build:
-      context: ./ingestion/kafka-init
-      dockerfile: Dockerfile
+    build: ./ingestion/kafka-init
     networks:
       - kafka-network
     depends_on:
@@ -61,3 +59,37 @@ services:
         condition: service_healthy
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092 
+      GTFS_API_KEY: ${GTFS_API_KEY}
+  redis:
+      image: redis:7
+      container_name: redis
+      ports:
+        - "6379:6379"
+      networks:
+        - kafka-network
+  vehicle-positions-consumer:
+    build: ./streaming
+    networks:
+      - kafka-network
+    command: ["process_vehicle_positions.py"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_started
+  trip-updates-consumer:
+    build: ./streaming
+    networks:
+      - kafka-network
+    command: ["process_trip_updates.py"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      REDIS_HOST: redis
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_started

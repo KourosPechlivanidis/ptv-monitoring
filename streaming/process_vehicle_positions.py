@@ -28,12 +28,12 @@ def write_to_redis(batch_df: DataFrame, batch_id: int) -> None:
 
         redis_client.expire(key, 120)
 
-KAFK_BOOTSTRAP_SERVERS = "localhost:9094"
-REDIS_HOST = "localhost"
+KAFK_BOOTSTRAP_SERVERS = "kafka:9092"
+REDIS_HOST = "redis"
 REDIS_PORT = "6379"
 
 TOPIC = "vehicle_positions"
-SCHEMA_PATH = "schemas/vehicle_positions.json"
+SCHEMA_PATH = "schemas/vehicle_position.json"
 
 spark = (
     SparkSession.builder

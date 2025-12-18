@@ -1,11 +1,11 @@
-from enum import StrEnum
+from enum import Enum
 import json
 
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.types import StructType
-import pyspark.functions as F
+import pyspark.sql.functions as F
 
-class ReadMode(StrEnum):
+class ReadMode(str, Enum):
     BATCH = "batch"
     STREAM = "stream"
 
