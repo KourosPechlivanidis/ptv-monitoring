@@ -1,20 +1,36 @@
 import redis
+import pandas as pd
 
 from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.functions import col, explode, to_date, to_unix_timestamp, to_utc_timestamp, concat_ws, split, lit, concat, date_add, lpad, when, max
-from pyspark.sql import Window
+from pyspark.sql.functions import col, explode, to_date, to_unix_timestamp, to_utc_timestamp, concat_ws, split, lit, concat, date_add, lpad, when
 
-from utils import read_from_kafka, load_schema, parse_kafka_value
+from utils import read_from_kafka, load_schema, parse_kafka_value, write_to_redis, join_gtfs_with_schedule
 
-def write_to_redis(batch_df, batch_id):
-    for row in batch_df.collect():
-        key = f"trip:{row.trip_id}"
-        last_stop = redis_client.hget(key, "last_stop_sequence")
-        if last_stop is None or (row.latest_stop_sequence is not None and row.latest_stop_sequence > int(last_stop)):
-            redis_client.hset(key, mapping={
-                "last_stop_sequence": row.latest_stop_sequence if row.latest_stop_sequence is not None else 0,
-                "delay_seconds": row.latest_delay_seconds if row.latest_delay_seconds is not None else 0,
-            })
+def write_delay_batch(batch_df: DataFrame, batch_id: int) -> None:
+    print(f"Writing delay batch {batch_id} to Redis")
+
+    batch_df.foreachPartition(
+        lambda rows: write_to_redis(
+            rows,
+            key_prefix="delay",
+            ttl_seconds=120,
+            field_mapper=lambda r: {
+                "trip_id": r.trip_id,
+                "last_stop_sequence": r.stop_sequence,
+                "delay_seconds": r.delay_seconds,
+            }
+        )
+    )
+
+def keep_latest_stop(batch: pd.DataFrame, state: pd.DataFrame) -> pd.DataFrame:
+    if state.empty:
+        state = pd.DataFrame(columns=batch.columns)
+    
+    combined = pd.concat([state, batch], ignore_index=True)
+    # Keep row with max stop_sequence per trip
+    latest = combined.sort_values("stop_sequence", ascending=False).drop_duplicates(subset=["trip_id"])
+    return latest
+
 
 KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
 REDIS_HOST = "redis"
@@ -22,10 +38,11 @@ REDIS_PORT = "6379"
 
 TOPIC = "trip_updates"
 SCHEMA_PATH = "schemas/trip_update.json"
-STATIC_PATHS = [
-    "static/bus/stop_times.parquet",
-    "static/metro/stop_times.parquet",
-    "static/tram/stop_times.parquet"
+
+STATIC_STOP_TIMES_PATHS = [
+    "static/bus/stop_times",
+    "static/metro/stop_times",
+    "static/tram/stop_times"
 ]
 
 spark = (
@@ -40,9 +57,8 @@ raw_df = read_from_kafka(
     bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS
 )
 
-schema = load_schema(SCHEMA_PATH)
-parsed_df = parse_kafka_value(raw_df, schema)
-
+input_schema = load_schema(SCHEMA_PATH)
+parsed_df = parse_kafka_value(raw_df, input_schema)
 
 exploded_df = parsed_df.select(
     col("value.mode").alias("mode"),
@@ -57,7 +73,7 @@ exploded_df = parsed_df.select(
     explode(col("value.trip_update.stop_time_update")).alias("stop_time_update")
 )
 
-canonical_df = exploded_df.select(
+df = exploded_df.select(
     col("mode"),
     col("gtfs_realtime_version"),
     col("source_timestamp"),
@@ -75,17 +91,10 @@ canonical_df = exploded_df.select(
 ).filter(col("trip_id").isNotNull())
 
 
-dfs = []
-for path in STATIC_PATHS:
-    dfs.append(spark.read.parquet(path))
 
-static_stop_times_df = dfs[0].unionByName(dfs[1]).unionByName(dfs[2])
+df = join_gtfs_with_schedule(spark, df, STATIC_STOP_TIMES_PATHS, ["trip_id", "stop_sequence"])
 
-enriched_df = canonical_df.join(
-    static_stop_times_df,
-    on=["trip_id", "stop_sequence"],
-    how="left"
-).withColumn(
+enriched_df = df.withColumn(
     "start_date", to_date(col("start_date"), "yyyyMMdd")
 )
 
@@ -107,21 +116,20 @@ enriched_df = enriched_df.withColumn(
     to_unix_timestamp(to_utc_timestamp(col("datetime_str"), "Australia/Melbourne"))
 ).drop("hour", "minute_second", "normalized_date", "normalized_hour", "datetime_str")
 
+
+enriched_df = enriched_df.filter(
+    col("arrival_time_posix").isNotNull() & col("stop_arrival_time").isNotNull()
+)
+
 enriched_df = enriched_df.withColumn(
-    "delay_seconds", col("stop_arrival_time") - col("arrival_time_posix") - 3600
+    "delay_seconds",
+    col("arrival_time_posix") - col("stop_arrival_time")
 )
-
-latest_df = enriched_df.groupBy("trip_id").agg(
-    max("stop_sequence").alias("latest_stop_sequence"),
-    max("delay_seconds").alias("latest_delay_seconds"),
-)
-
-redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
 
 query = (
-    latest_df.writeStream
-    .foreachBatch(write_to_redis)
-    .outputMode("complete")
+    enriched_df.writeStream
+    .foreachBatch(write_delay_batch)
+    .outputMode("update")
     .start()
 )
 

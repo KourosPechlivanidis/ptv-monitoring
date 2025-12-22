@@ -1,39 +1,47 @@
 import redis
 
 from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.functions import col
+from pyspark.sql.functions import col, coalesce, lit
 
-from utils import read_from_kafka, load_schema, parse_kafka_value
+from utils import read_from_kafka, load_schema, parse_kafka_value, write_to_redis, join_gtfs_with_schedule
 
-def write_to_redis(batch_df: DataFrame, batch_id: int) -> None:
-    print(f"Writing batch id: {batch_id} to Redis")
+def write_vehicle_batch(df: DataFrame, batch_id: int) -> None:
+    print(f"Writing vehicle batch {batch_id} to Redis")
 
-    for row in batch_df.collect():
-        if row.trip_id is None:
-            continue
-
-        key = f"trip:{row.trip_id}"
-
-        redis_client.hset(
-            key,
-            mapping={
-                "mode": row.mode,
-                "route_id": row.route_id,
-                "latitude": row.latitude,
-                "longitude": row.longitude,
-                "label": row.label,
-                "timestamp": row.position_timestamp,
-            },
+    df.foreachPartition(
+        lambda rows: write_to_redis(
+            rows,
+            key_prefix="vehicle",
+            ttl_seconds=120,
+            field_mapper=lambda r: {
+                "trip_id": r.trip_id,
+                "mode": r.mode,
+                "route_id": r.route_id,
+                "route_name": r.resolved_route_name,
+                "headsign": r.resolved_headsign,
+                "latitude": r.latitude,
+                "longitude": r.longitude,
+                "label": r.label,
+                "timestamp": r.position_timestamp,
+            }
         )
+    )
 
-        redis_client.expire(key, 120)
-
-KAFK_BOOTSTRAP_SERVERS = "kafka:9092"
-REDIS_HOST = "redis"
-REDIS_PORT = "6379"
-
+KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
 TOPIC = "vehicle_positions"
 SCHEMA_PATH = "schemas/vehicle_position.json"
+
+STATIC_ROUTES_PATHS = [
+    "static/bus/routes",
+    "static/metro/routes",
+    "static/tram/routes"
+]
+
+STATIC_TRIPS_PATHS = [
+    "static/bus/trips",
+    "static/metro/trips",
+    "static/tram/trips"
+]
 
 spark = (
     SparkSession.builder
@@ -43,13 +51,13 @@ spark = (
 raw_df = read_from_kafka(
     spark=spark,
     topic=TOPIC,
-    bootstrap_servers=KAFK_BOOTSTRAP_SERVERS,
+    bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
 )
 
 schema = load_schema(SCHEMA_PATH)
 parsed_df = parse_kafka_value(raw_df, schema)
 
-canonical_df = parsed_df.select(
+df = parsed_df.select(
     col("value.mode"),
     col("value.header.gtfs_realtime_version").alias("gtfs_realtime_version"),
     col("value.header.timestamp").cast("long").alias("source_timestamp"),
@@ -65,11 +73,29 @@ canonical_df = parsed_df.select(
     col("value.vehicle.timestamp").cast("long").alias("position_timestamp"),
 )
 
-redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
+
+df = join_gtfs_with_schedule(spark, df, STATIC_ROUTES_PATHS, ["route_id"], ["route_id","route_short_name", "route_long_name"])
+df = join_gtfs_with_schedule(spark, df, STATIC_TRIPS_PATHS, ["trip_id"], ["trip_id", "trip_headsign"])
+
+df = df.withColumn(
+    "resolved_route_name",
+    coalesce(
+        col("route_short_name"),
+        col("route_long_name"),
+        col("route_id"),
+        lit("UNKNOWN_ROUTE")
+    )
+).withColumn(
+    "resolved_headsign",
+    coalesce(
+        col("trip_headsign"),
+        lit("UNKNOWN_DESTINATION")
+    )
+)
 
 query = (
-    canonical_df.writeStream
-    .foreachBatch(write_to_redis)
+    df.writeStream
+    .foreachBatch(write_vehicle_batch)
     .start()
 )
 
