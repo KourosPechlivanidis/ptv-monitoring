@@ -94,7 +94,6 @@ class TripUpdateParser(GTFSRealtimeParserABC):
 
             tu = entity.trip_update
 
-            # Build Trip model
             trip_data = TripUpdateTrip(
                 trip_id=tu.trip.trip_id,
                 route_id=tu.trip.route_id,

@@ -5,7 +5,7 @@ networks:
     driver: bridge
 
 services:
-# kafka broker
+# kafka broker on KRaft mode
   kafka:
     image: confluentinc/cp-kafka:latest
     hostname: kafka
@@ -41,7 +41,7 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
-  # initialise topics
+  # initialise topics, can only be ran after broker is healthy
   init-kafka:
     build: ./ingestion/kafka-init
     networks:
@@ -49,7 +49,7 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-  # run producer that puts GTFS real time records into a topic
+  # run producer that puts GTFS real time updates into kafka topics
   producer:
     build: ./ingestion/producer
     networks:
@@ -67,6 +67,7 @@ services:
         - "6379:6379"
       networks:
         - kafka-network
+  # Spark structured streaming consumer to consume vehicle positions from kafka
   vehicle-positions-consumer:
     build: ./streaming
     networks:
@@ -80,6 +81,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+  # Spark structured streaming consumer to consume trip updates from kafka
   trip-updates-consumer:
     build: ./streaming
     networks:

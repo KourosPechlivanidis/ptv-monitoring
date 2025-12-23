@@ -1,11 +1,25 @@
-import redis
-
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import col, coalesce, lit
 
-from utils import read_from_kafka, load_schema, parse_kafka_value, write_to_redis, join_gtfs_with_schedule
+from utils import (read_from_kafka, 
+                   load_schema, 
+                   parse_kafka_value, 
+                   write_to_redis, 
+                   join_gtfs_with_schedule
+)
+from config import VehicleConfig
 
-def write_vehicle_batch(df: DataFrame, batch_id: int) -> None:
+def write_vehicle_batch(df: DataFrame, batch_id: int, config: VehicleConfig) -> None:
+
+    """
+   
+    Function that maps and writes fields to redis
+    
+    :param df: microbatch as a spark df that is written to redis
+    :type batch_id: DataFrame
+    
+    """
+        
     print(f"Writing vehicle batch {batch_id} to Redis")
 
     df.foreachPartition(
@@ -13,6 +27,8 @@ def write_vehicle_batch(df: DataFrame, batch_id: int) -> None:
             rows,
             key_prefix="vehicle",
             ttl_seconds=120,
+            redis_host=config.redis_host,
+            redis_port=config.redis_port,
             field_mapper=lambda r: {
                 "trip_id": r.trip_id,
                 "mode": r.mode,
@@ -27,21 +43,8 @@ def write_vehicle_batch(df: DataFrame, batch_id: int) -> None:
         )
     )
 
-KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
-TOPIC = "vehicle_positions"
-SCHEMA_PATH = "schemas/vehicle_position.json"
 
-STATIC_ROUTES_PATHS = [
-    "static/bus/routes",
-    "static/metro/routes",
-    "static/tram/routes"
-]
-
-STATIC_TRIPS_PATHS = [
-    "static/bus/trips",
-    "static/metro/trips",
-    "static/tram/trips"
-]
+config = VehicleConfig()
 
 spark = (
     SparkSession.builder
@@ -50,11 +53,11 @@ spark = (
 )
 raw_df = read_from_kafka(
     spark=spark,
-    topic=TOPIC,
-    bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+    topic=config.topic,
+    bootstrap_servers=config.kafka_bootstrap_servers,
 )
 
-schema = load_schema(SCHEMA_PATH)
+schema = load_schema(config.schema_path)
 parsed_df = parse_kafka_value(raw_df, schema)
 
 df = parsed_df.select(
@@ -74,8 +77,8 @@ df = parsed_df.select(
 )
 
 
-df = join_gtfs_with_schedule(spark, df, STATIC_ROUTES_PATHS, ["route_id"], ["route_id","route_short_name", "route_long_name"])
-df = join_gtfs_with_schedule(spark, df, STATIC_TRIPS_PATHS, ["trip_id"], ["trip_id", "trip_headsign"])
+df = join_gtfs_with_schedule(spark, df, config.route_paths, ["route_id"], ["route_id","route_short_name", "route_long_name"])
+df = join_gtfs_with_schedule(spark, df, config.trip_paths, ["trip_id"], ["trip_id", "trip_headsign"])
 
 df = df.withColumn(
     "resolved_route_name",

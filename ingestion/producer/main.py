@@ -8,6 +8,7 @@ if __name__ == "__main__":
 
     publisher = KafkaPublisher()
 
+    # According to API specs, tram updates are pushed every minute, and other vehicles every 5s
     tram_vehicle_positions = GTFSPoller(
         feed_name="vehicle_positions",
         mode="tram",
