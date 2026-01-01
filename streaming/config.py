@@ -17,6 +17,8 @@ class BaseConfig:
     redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
     base_static_path: str = os.getenv("STATIC_DATA_PATH", "static")
     timezone: str = os.getenv("APP_TIMEZONE", "Australia/Melbourne")
+    aws_access_key: str = os.getenv("AWS_ACCESS_KEY")
+    aws_secret_key: str = os.getenv("AWS_SECRET_KEY")
 
     def _get_paths(self, folder: str) -> List[str]:
         return [f"{self.base_static_path}/{m}/{folder}" for m in ["bus", "metro", "tram"]]
@@ -31,6 +33,8 @@ class VehicleConfig(BaseConfig):
     """
     topic: str = "vehicle_positions"
     schema_path: str = "schemas/vehicle_position.json"
+    s3_delta_path: str = "s3a://ptv-gtfs-silver/delta/trip_updates"
+    s3_checkpoint_path: str = "s3a://ptv-gtfs-silver/checkpoint/trip_updates"
     
     # Vehicle positions need access to routes and trips to get route names + headsigns
     @property
@@ -48,6 +52,8 @@ class TripUpdateConfig(BaseConfig):
     """
     topic: str = "trip_updates"
     schema_path: str = "schemas/trip_update.json"
+    s3_delta_path: str = "s3a://ptv-gtfs-silver/delta/vehicle_positions"
+    s3_checkpoint_path: str = "s3a://ptv-gtfs-silver/checkpoint/vehicle_positions"
     
     # Trip updates need access to stop times to compute delays
     @property

@@ -4,7 +4,7 @@ from kafka import KafkaProducer
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
 
-"kafka:9092"
+
 class KafkaPublisher:
     
     def __init__(self, bootstrap_servers: str = KAFKA_BOOTSTRAP_SERVERS):

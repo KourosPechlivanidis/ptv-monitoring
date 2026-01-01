@@ -12,7 +12,6 @@ services:
     container_name: kafka
     ports:
       - "9092:9092"
-      - "9093:9093"
       - "9094:9094"
     environment:
       KAFKA_KRAFT_MODE: "true" 
@@ -27,11 +26,8 @@ services:
       KAFKA_LOG_DIRS: /var/lib/kafka/data 
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"  
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1 
-      KAFKA_LOG_RETENTION_HOURS: 168 
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0  
       CLUSTER_ID: "Mk3OEYBSD34fcwNTJENDM2Qk" 
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
       - ./data:/var/lib/kafka/data 
     networks:
       - kafka-network
@@ -76,6 +72,8 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_HOST: redis
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
     depends_on:
       kafka:
         condition: service_healthy
@@ -90,8 +88,11 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       REDIS_HOST: redis
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
     depends_on:
       kafka:
         condition: service_healthy
       redis:
         condition: service_started
+    

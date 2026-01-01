@@ -11,40 +11,43 @@ from utils import (read_from_kafka,
 
 from config import TripUpdateConfig
 
-def write_delay_batch(df: DataFrame, batch_id: int, config: TripUpdateConfig) -> None:
-    
-    """
-   
-    Function that maps and writes fields to redis
-    
-    :param df: microbatch as a spark df that is written to redis
-    :type batch_id: DataFrame
-    
-    """
-
-    print(f"Writing delay batch {batch_id} to Redis")
-
-    df.foreachPartition(
-        lambda rows: write_to_redis(
-            rows,
-            key_prefix="delay",
-            ttl_seconds=120,
-            redis_host=config.redis_host,
-            redis_port=config.redis_port,
-            field_mapper=lambda r: {
-                "trip_id": r.trip_id,
-                "last_stop_sequence": r.stop_sequence,
-                "delay_seconds": r.delay_seconds,
-            }
+def get_write_delay_handler(config: TripUpdateConfig):
+       
+    def write_delay_batch(df: DataFrame, batch_id: int) -> None:
+        print(f"Writing delay batch {batch_id} to Redis")
+        
+        # Now config is accessible here
+        df.foreachPartition(
+            lambda rows: write_to_redis(
+                rows,
+                key_prefix="delay",
+                ttl_seconds=120,
+                redis_host=config.redis_host,
+                redis_port=config.redis_port,
+                field_mapper=lambda r: {
+                    "trip_id": r.trip_id,
+                    "last_stop_sequence": r.stop_sequence,
+                    "delay_seconds": r.delay_seconds,
+                }
+            )
         )
-    )
-
+    return write_delay_batch
 
 config = TripUpdateConfig()
 
 spark = (
     SparkSession.builder
     .appName("TripUpdateKafkaConsumer")
+    # Delta lake extensions
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+    # S3 extensions
+    .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+    .config("spark.hadoop.fs.s3a.access.key", config.aws_access_key)
+    .config("spark.hadoop.fs.s3a.secret.key", config.aws_secret_key)
+    .config("spark.hadoop.fs.s3a.endpoint", "s3.amazonaws.com")
+    .config("spark.hadoop.fs.s3a.path.style.access", "true") 
+    .config("spark.delta.logStore.class", "org.apache.spark.sql.delta.storage.S3SingleDriverLogStore")
     .getOrCreate()
 )
 
@@ -98,7 +101,12 @@ df = df.withColumn(
      .otherwise(None)
 )
 
-df = join_gtfs_with_schedule(spark, df, config.stop_times_paths, ["trip_id", "stop_sequence"])
+df = join_gtfs_with_schedule(spark, df, config.stop_times_paths, ["trip_id", "stop_sequence"], [
+    "trip_id",
+    "arrival_time",
+    "departure_time",
+    "stop_sequence"
+])
 
 enriched_df = df.withColumn(
     "start_date", F.to_date(F.col("start_date"), "yyyyMMdd")
@@ -134,11 +142,22 @@ enriched_df = enriched_df.withColumn(
     F.col("effective_stop_time") - F.col("scheduled_stop_time")
 )
 
-query = (
+redis_query = (
     enriched_df.writeStream
-    .foreachBatch(write_delay_batch)
+    .queryName("RedisSink")
+    .foreachBatch(get_write_delay_handler(config))
     .outputMode("update")
     .start()
 )
 
-query.awaitTermination()
+delta_query = (
+    enriched_df.writeStream
+    .queryName("S3Sink")
+    .format("delta")
+    .outputMode("append")
+    .option("checkpointLocation", config.s3_checkpoint_path)
+    .trigger(processingTime='1 minute') 
+    .start(config.s3_delta_path)
+)
+
+spark.streams.awaitAnyTermination()

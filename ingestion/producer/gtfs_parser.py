@@ -105,6 +105,7 @@ class TripUpdateParser(GTFSRealtimeParserABC):
             stop_time_updates = []
             for stu in tu.stop_time_update:
 
+                # According to API specs, a trip can have either arrival, departure or both
                 arrival_data = None
                 if stu.HasField("arrival"):
                     arrival_data = Arrival(time=stu.arrival.time)

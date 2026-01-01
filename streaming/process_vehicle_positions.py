@@ -9,39 +9,43 @@ from utils import (read_from_kafka,
 )
 from config import VehicleConfig
 
-def write_vehicle_batch(df: DataFrame, batch_id: int, config: VehicleConfig) -> None:
+def get_write_vehicle_batch(config: VehicleConfig):
+    
+    def write_vehicle_batch(df: DataFrame, batch_id: int) -> None:
 
-    """
-   
-    Function that maps and writes fields to redis
+        """
     
-    :param df: microbatch as a spark df that is written to redis
-    :type batch_id: DataFrame
-    
-    """
+        Function that maps and writes fields to redis
         
-    print(f"Writing vehicle batch {batch_id} to Redis")
+        :param df: microbatch as a spark df that is written to redis
+        :type batch_id: DataFrame
+        
+        """
+            
+        print(f"Writing vehicle batch {batch_id} to Redis")
 
-    df.foreachPartition(
-        lambda rows: write_to_redis(
-            rows,
-            key_prefix="vehicle",
-            ttl_seconds=120,
-            redis_host=config.redis_host,
-            redis_port=config.redis_port,
-            field_mapper=lambda r: {
-                "trip_id": r.trip_id,
-                "mode": r.mode,
-                "route_id": r.route_id,
-                "route_name": r.resolved_route_name,
-                "headsign": r.resolved_headsign,
-                "latitude": r.latitude,
-                "longitude": r.longitude,
-                "label": r.label,
-                "timestamp": r.position_timestamp,
-            }
+        df.foreachPartition(
+            lambda rows: write_to_redis(
+                rows,
+                key_prefix="vehicle",
+                ttl_seconds=120,
+                redis_host=config.redis_host,
+                redis_port=config.redis_port,
+                field_mapper=lambda r: {
+                    "trip_id": r.trip_id,
+                    "mode": r.mode,
+                    "route_id": r.route_id,
+                    "route_name": r.resolved_route_name,
+                    "headsign": r.resolved_headsign,
+                    "latitude": r.latitude,
+                    "longitude": r.longitude,
+                    "label": r.label,
+                    "timestamp": r.position_timestamp,
+                }
+            )
         )
-    )
+
+    return write_vehicle_batch
 
 
 config = VehicleConfig()
@@ -49,8 +53,19 @@ config = VehicleConfig()
 spark = (
     SparkSession.builder
     .appName("VehiclePositionsKafkaConsumer")
+    # Delta lake extensions
+    .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
+    .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
+    # S3 extensions
+    .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+    .config("spark.hadoop.fs.s3a.access.key", config.aws_access_key)
+    .config("spark.hadoop.fs.s3a.secret.key", config.aws_secret_key)
+    .config("spark.hadoop.fs.s3a.endpoint", "s3.amazonaws.com")
+    .config("spark.hadoop.fs.s3a.path.style.access", "true") 
+    .config("spark.delta.logStore.class", "org.apache.spark.sql.delta.storage.S3SingleDriverLogStore")
     .getOrCreate()
 )
+
 raw_df = read_from_kafka(
     spark=spark,
     topic=config.topic,
@@ -77,10 +92,10 @@ df = parsed_df.select(
 )
 
 
-df = join_gtfs_with_schedule(spark, df, config.route_paths, ["route_id"], ["route_id","route_short_name", "route_long_name"])
-df = join_gtfs_with_schedule(spark, df, config.trip_paths, ["trip_id"], ["trip_id", "trip_headsign"])
+df_enriched = join_gtfs_with_schedule(spark, df, config.route_paths, ["route_id"], ["route_id","route_short_name", "route_long_name"])
+df_enriched = join_gtfs_with_schedule(spark, df_enriched, config.trip_paths, ["trip_id"], ["trip_id", "trip_headsign"])
 
-df = df.withColumn(
+df_enriched = df_enriched.withColumn(
     "resolved_route_name",
     coalesce(
         col("route_short_name"),
@@ -96,10 +111,21 @@ df = df.withColumn(
     )
 )
 
-query = (
-    df.writeStream
-    .foreachBatch(write_vehicle_batch)
+redis_query = (
+    df_enriched.writeStream
+    .queryName("RedisSink")
+    .foreachBatch(get_write_vehicle_batch(config))
     .start()
 )
 
-query.awaitTermination()
+delta_query = (
+    df.writeStream
+    .queryName("S3Sink")
+    .format("delta")
+    .outputMode("append")
+    .option("checkpointLocation", config.s3_checkpoint_path)
+    .trigger(processingTime='1 minute') 
+    .start(config.s3_delta_path)
+)
+
+spark.streams.awaitAnyTermination()
