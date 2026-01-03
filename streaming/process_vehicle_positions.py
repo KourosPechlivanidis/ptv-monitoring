@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.functions import col, coalesce, lit
+import pyspark.sql.functions  as F
 
 from utils import (read_from_kafka, 
                    load_schema, 
@@ -76,40 +76,54 @@ schema = load_schema(config.schema_path)
 parsed_df = parse_kafka_value(raw_df, schema)
 
 df = parsed_df.select(
-    col("value.mode"),
-    col("value.header.gtfs_realtime_version").alias("gtfs_realtime_version"),
-    col("value.header.timestamp").cast("long").alias("source_timestamp"),
-    col("value.entity_id"),
-    col("value.vehicle.trip.trip_id").alias("trip_id"),
-    col("value.vehicle.trip.route_id").alias("route_id"),
-    col("value.vehicle.trip.start_time").alias("start_time"),
-    col("value.vehicle.trip.start_date").alias("start_date"),
-    col("value.vehicle.vehicle.vehicle_id").alias("vehicle_id"),
-    col("value.vehicle.vehicle.label").alias("label"),
-    col("value.vehicle.position.latitude").cast("double").alias("latitude"),
-    col("value.vehicle.position.longitude").cast("double").alias("longitude"),
-    col("value.vehicle.timestamp").cast("long").alias("position_timestamp"),
+    F.col("value.mode"),
+    F.col("value.header.gtfs_realtime_version").alias("gtfs_realtime_version"),
+    F.col("value.header.timestamp").cast("long").alias("source_timestamp"),
+    F.col("value.entity_id"),
+    F.col("value.vehicle.trip.trip_id").alias("trip_id"),
+    F.col("value.vehicle.trip.route_id").alias("route_id"),
+    F.col("value.vehicle.trip.start_time").alias("start_time"),
+    F.col("value.vehicle.trip.start_date").alias("start_date"),
+    F.col("value.vehicle.vehicle.vehicle_id").alias("vehicle_id"),
+    F.col("value.vehicle.vehicle.label").alias("label"),
+    F.col("value.vehicle.position.latitude").cast("double").alias("latitude"),
+    F.col("value.vehicle.position.longitude").cast("double").alias("longitude"),
+    F.col("value.vehicle.timestamp").cast("long").alias("position_timestamp"),
 )
 
+df = df.withColumn(
+    "event_ts",
+    F.from_unixtime(F.col("source_timestamp")).cast("timestamp")
+)
+
+df = (
+    df
+    .withColumn("year",  F.year("event_ts"))
+    .withColumn("month", F.month("event_ts"))
+    .withColumn("day",   F.dayofmonth("event_ts"))
+    .withColumn("hour",  F.hour("event_ts"))
+)
 
 df_enriched = join_gtfs_with_schedule(spark, df, config.route_paths, ["route_id"], ["route_id","route_short_name", "route_long_name"])
 df_enriched = join_gtfs_with_schedule(spark, df_enriched, config.trip_paths, ["trip_id"], ["trip_id", "trip_headsign"])
 
 df_enriched = df_enriched.withColumn(
     "resolved_route_name",
-    coalesce(
-        col("route_short_name"),
-        col("route_long_name"),
-        col("route_id"),
-        lit("UNKNOWN_ROUTE")
+    F.coalesce(
+        F.col("route_short_name"),
+        F.col("route_long_name"),
+        F.col("route_id"),
+        F.lit("UNKNOWN_ROUTE")
     )
 ).withColumn(
     "resolved_headsign",
-    coalesce(
-        col("trip_headsign"),
-        lit("UNKNOWN_DESTINATION")
+    F.coalesce(
+        F.col("trip_headsign"),
+        F.lit("UNKNOWN_DESTINATION")
     )
 )
+
+
 
 redis_query = (
     df_enriched.writeStream
@@ -124,6 +138,7 @@ delta_query = (
     .format("delta")
     .outputMode("append")
     .option("checkpointLocation", config.s3_checkpoint_path)
+    .partitionBy("year", "month", "day", "hour")
     .trigger(processingTime='1 minute') 
     .start(config.s3_delta_path)
 )

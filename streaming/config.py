@@ -33,8 +33,8 @@ class VehicleConfig(BaseConfig):
     """
     topic: str = "vehicle_positions"
     schema_path: str = "schemas/vehicle_position.json"
-    s3_delta_path: str = "s3a://ptv-gtfs-silver/delta/trip_updates"
-    s3_checkpoint_path: str = "s3a://ptv-gtfs-silver/checkpoint/trip_updates"
+    s3_delta_path: str = "s3a://ptv-gtfs-silver/delta/vehicle_positions"
+    s3_checkpoint_path: str = "s3a://ptv-gtfs-silver/checkpoint/vehicle_positions"
     
     # Vehicle positions need access to routes and trips to get route names + headsigns
     @property
@@ -52,8 +52,8 @@ class TripUpdateConfig(BaseConfig):
     """
     topic: str = "trip_updates"
     schema_path: str = "schemas/trip_update.json"
-    s3_delta_path: str = "s3a://ptv-gtfs-silver/delta/vehicle_positions"
-    s3_checkpoint_path: str = "s3a://ptv-gtfs-silver/checkpoint/vehicle_positions"
+    s3_delta_path: str = "s3a://ptv-gtfs-silver/delta/trip_updates"
+    s3_checkpoint_path: str = "s3a://ptv-gtfs-silver/checkpoint/trip_updates"
     
     # Trip updates need access to stop times to compute delays
     @property

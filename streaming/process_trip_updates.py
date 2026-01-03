@@ -142,6 +142,19 @@ enriched_df = enriched_df.withColumn(
     F.col("effective_stop_time") - F.col("scheduled_stop_time")
 )
 
+enriched_df = enriched_df.withColumn(
+    "event_ts",
+    F.from_unixtime(F.col("source_timestamp")).cast("timestamp")
+)
+
+enriched_df = (
+    enriched_df
+    .withColumn("year",  F.year("event_ts"))
+    .withColumn("month", F.month("event_ts"))
+    .withColumn("day",   F.dayofmonth("event_ts"))
+    .withColumn("hour",  F.hour("event_ts"))
+)
+
 redis_query = (
     enriched_df.writeStream
     .queryName("RedisSink")
@@ -156,6 +169,7 @@ delta_query = (
     .format("delta")
     .outputMode("append")
     .option("checkpointLocation", config.s3_checkpoint_path)
+    .partitionBy("year", "month", "day", "hour")
     .trigger(processingTime='1 minute') 
     .start(config.s3_delta_path)
 )

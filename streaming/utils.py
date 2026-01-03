@@ -43,6 +43,7 @@ def read_from_kafka(
             "startingOffsets",
             "earliest" if mode is ReadMode.BATCH else "latest",
         )
+        .option("failOnDataLoss", "false") # Dont throw an error when checkpoint does not match latest offset, as this can happen because the program may be resumed anytime
         .load()
     )
 
