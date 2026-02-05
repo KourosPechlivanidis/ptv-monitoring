@@ -1,5 +1,6 @@
 SELECT
     stop_id,
+    mode,
     year,
     month,
     day,

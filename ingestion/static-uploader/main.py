@@ -14,8 +14,8 @@ def process_and_upload(bucket_name, valid_from_date):
 
     # MODE_MAP = {"2": "train", "3": "tram", "4": "bus"}
     MODE_MAP = {"4": "bus"}
-    # files_to_process = ['stops.txt', 'routes.txt', 'trips.txt', 'stop_times.txt']
-    files_to_process = ['stop_times.txt']
+    files_to_process = ['stops.txt', 'routes.txt', 'trips.txt']
+
 
     response = requests.get(ptv_url)
     response.raise_for_status()
@@ -54,15 +54,6 @@ def process_and_upload(bucket_name, valid_from_date):
                                         partition_by=["transport_mode", "valid_from"],
                                         schema_mode="merge",
                                     )
-
-
-                                # write_deltalake(
-                                #     f"{s3_path}/{table_name}",
-                                #     df.to_arrow(),
-                                #     mode="append", 
-                                #     partition_by=["transport_mode", "valid_from"],
-                                #     schema_mode="merge"
-                                # )
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

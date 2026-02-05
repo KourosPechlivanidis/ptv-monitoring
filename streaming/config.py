@@ -19,6 +19,8 @@ class BaseConfig:
     timezone: str = os.getenv("APP_TIMEZONE", "Australia/Melbourne")
     aws_access_key: str = os.getenv("AWS_ACCESS_KEY")
     aws_secret_key: str = os.getenv("AWS_SECRET_KEY")
+    enable_redis_sink: str = os.getenv("ENABLE_REDIS_SINK")
+    enable_s3_sink: str = os.getenv("ENABLE_S3_SINK")
 
     def _get_paths(self, folder: str) -> List[str]:
         return [f"{self.base_static_path}/{m}/{folder}" for m in ["bus", "metro", "tram"]]

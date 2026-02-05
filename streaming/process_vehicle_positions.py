@@ -124,23 +124,24 @@ df_enriched = df_enriched.withColumn(
 )
 
 
+if config.enable_redis_sink:
+    redis_query = (
+        df_enriched.writeStream
+        .queryName("RedisSink")
+        .foreachBatch(get_write_vehicle_batch(config))
+        .start()
+    )
 
-redis_query = (
-    df_enriched.writeStream
-    .queryName("RedisSink")
-    .foreachBatch(get_write_vehicle_batch(config))
-    .start()
-)
-
-delta_query = (
-    df.writeStream
-    .queryName("S3Sink")
-    .format("delta")
-    .outputMode("append")
-    .option("checkpointLocation", config.s3_checkpoint_path)
-    .partitionBy("year", "month", "day", "hour")
-    .trigger(processingTime='1 minute') 
-    .start(config.s3_delta_path)
-)
+if config.enable_s3_sink:
+    delta_query = (
+        df.writeStream
+        .queryName("S3Sink")
+        .format("delta")
+        .outputMode("append")
+        .option("checkpointLocation", config.s3_checkpoint_path)
+        .partitionBy("year", "month", "day", "hour")
+        .trigger(processingTime='1 minute') 
+        .start(config.s3_delta_path)
+    )
 
 spark.streams.awaitAnyTermination()

@@ -155,23 +155,26 @@ enriched_df = (
     .withColumn("hour",  F.hour("event_ts"))
 )
 
-redis_query = (
-    enriched_df.writeStream
-    .queryName("RedisSink")
-    .foreachBatch(get_write_delay_handler(config))
-    .outputMode("update")
-    .start()
-)
+if config.enable_redis_sink:
+    redis_query = (
+        enriched_df.writeStream
+        .queryName("RedisSink")
+        .foreachBatch(get_write_delay_handler(config))
+        .outputMode("update")
+        .start()
+    )
 
-delta_query = (
-    enriched_df.writeStream
-    .queryName("S3Sink")
-    .format("delta")
-    .outputMode("append")
-    .option("checkpointLocation", config.s3_checkpoint_path)
-    .partitionBy("year", "month", "day", "hour")
-    .trigger(processingTime='1 minute') 
-    .start(config.s3_delta_path)
-)
+
+if config.enable_s3_sink:
+    delta_query = (
+        enriched_df.writeStream
+        .queryName("S3Sink")
+        .format("delta")
+        .outputMode("append")
+        .option("checkpointLocation", config.s3_checkpoint_path)
+        .partitionBy("year", "month", "day", "hour")
+        .trigger(processingTime='1 minute') 
+        .start(config.s3_delta_path)
+    )
 
 spark.streams.awaitAnyTermination()
