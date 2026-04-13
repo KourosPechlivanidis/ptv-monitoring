@@ -132,14 +132,19 @@ def load_schema(path: str) -> StructType:
     
 
 def join_gtfs_with_schedule(
-    spark: SparkSession, 
-    df: DataFrame, 
-    static_path: str, 
-    join_keys: List[str], 
+    spark: SparkSession,
+    df: DataFrame,
+    static_path: str,
+    join_keys: List[str],
     select_cols=None
 ):
-    # 1. Load static data
-    static_df = spark.read.option("mergeSchema", "true").parquet(static_path).cache()
+    # 1. Load static data and filter to the latest schedule partition.
+    #    The static uploader appends a full copy of the schedule on each run,
+    #    partitioned by valid_from. Without this filter, every historical upload
+    #    would be included in the join, producing duplicate rows per entity.
+    static_df = spark.read.format("delta").load(static_path)
+    max_valid_from = static_df.agg(F.max("valid_from")).collect()[0][0]
+    static_df = static_df.filter(F.col("valid_from") == max_valid_from).cache()
 
     # 2. Alias both DataFrames to resolve ambiguity
     main_alias = "main"
