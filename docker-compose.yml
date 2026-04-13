@@ -4,6 +4,10 @@ networks:
     name: kafka-network
     driver: bridge
 
+# shared volume for the DuckDB file written by dbt-runner and read by dashboard
+volumes:
+  duckdb-data:
+
 services:
 # kafka broker on KRaft mode
   kafka:
@@ -74,6 +78,8 @@ services:
       REDIS_HOST: redis
       AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
       AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+      ENABLE_S3_SINK: False
+      ENABLE_REDIS_SINK: True
     depends_on:
       kafka:
         condition: service_healthy
@@ -90,9 +96,41 @@ services:
       REDIS_HOST: redis
       AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
       AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+      ENABLE_S3_SINK: False
+      ENABLE_REDIS_SINK: True
     depends_on:
       kafka:
         condition: service_healthy
       redis:
         condition: service_started
+
+  # dbt runner - refreshes the DuckDB analytics layer every 5 minutes
+  dbt-runner:
+    build: ./analytics
+    networks:
+      - kafka-network
+    volumes:
+      - duckdb-data:/duckdb
+    environment:
+      AWS_ACCESS_KEY: ${AWS_ACCESS_KEY}
+      AWS_SECRET_KEY: ${AWS_SECRET_KEY}
+      DUCKDB_PATH: /duckdb/dev.duckdb
+    depends_on:
+      - trip-updates-consumer
+
+  # Dash dashboard served on port 8050
+  dashboard:
+    build: ./dashboard
+    networks:
+      - kafka-network
+    ports:
+      - "8050:8050"
+    volumes:
+      - duckdb-data:/duckdb
+    environment:
+      REDIS_HOST: redis
+      DUCKDB_PATH: /duckdb/dev.duckdb
+    depends_on:
+      - redis
+      - dbt-runner
     

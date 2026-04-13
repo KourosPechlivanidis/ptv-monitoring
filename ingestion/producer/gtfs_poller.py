@@ -33,11 +33,14 @@ class GTFSPoller:
     def poll_loop(self):
         logger.info(f"[{self.feed_name}] Polling started.")
         while True:
-            raw_bytes = self.fetch_raw_bytes()
-            if raw_bytes:
-                parsed_messages = self.parser.parse(raw_bytes)
-                for message in parsed_messages:
-                    message["mode"] = self.mode
-                    self.publisher.publish_message(self.topic, message)
-                logger.info(f"[{self.feed_name}] [{self.mode}] Published {len(raw_bytes)} bytes.")
+            try:
+                raw_bytes = self.fetch_raw_bytes()
+                if raw_bytes:
+                    parsed_messages = self.parser.parse(raw_bytes)
+                    for message in parsed_messages:
+                        message["mode"] = self.mode
+                        self.publisher.publish_message(self.topic, message)
+                    logger.info(f"[{self.feed_name}] [{self.mode}] Published {len(parsed_messages)} messages.")
+            except Exception as e:
+                logger.error(f"[{self.feed_name}] [{self.mode}] Error in poll loop: {e}", exc_info=True)
             time.sleep(self.interval_seconds)

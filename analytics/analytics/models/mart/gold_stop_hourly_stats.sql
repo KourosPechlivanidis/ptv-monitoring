@@ -7,7 +7,8 @@ WITH hourly_stop_stats AS (
     day,
     hour,
     COUNT(*) AS total_stops,
-    SUM(CASE WHEN delay_seconds < 30 THEN 1 ELSE 0 END) AS on_time_stops
+    SUM(CASE WHEN delay_seconds < 300 THEN 1 ELSE 0 END) AS on_time_stops,
+    AVG(delay_seconds) as avg_delay
     FROM {{ ref('trip_updates_deduped') }}
     GROUP BY ALL
 )
@@ -15,7 +16,7 @@ WITH hourly_stop_stats AS (
 
 SELECT 
  stats.*,
- stops.stop_name,
+ stops.stop_name
  FROM hourly_stop_stats as stats
 LEFT JOIN (
     SELECT * FROM delta_scan('s3://ptv-gtfs-static/delta/stops')

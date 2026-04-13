@@ -8,22 +8,22 @@ class BaseConfig:
     
     """
     
-    Infrastructure settings applikcable to both trip updates and vehicle positions
+    Infrastructure settings applicable to both trip updates and vehicle positions
 
     """
     
     kafka_bootstrap_servers: str = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
     redis_host: str = os.getenv("REDIS_HOST", "redis")
     redis_port: int = int(os.getenv("REDIS_PORT", "6379"))
-    base_static_path: str = os.getenv("STATIC_DATA_PATH", "static")
+    base_static_path: str = os.getenv("STATIC_DATA_PATH", "s3a://ptv-gtfs-static/delta")
     timezone: str = os.getenv("APP_TIMEZONE", "Australia/Melbourne")
     aws_access_key: str = os.getenv("AWS_ACCESS_KEY")
     aws_secret_key: str = os.getenv("AWS_SECRET_KEY")
-    enable_redis_sink: str = os.getenv("ENABLE_REDIS_SINK")
-    enable_s3_sink: str = os.getenv("ENABLE_S3_SINK")
+    enable_redis_sink: bool = os.getenv("ENABLE_REDIS_SINK", "false").lower() == "true"
+    enable_s3_sink: bool = os.getenv("ENABLE_S3_SINK", "false").lower() == "true"
 
-    def _get_paths(self, folder: str) -> List[str]:
-        return [f"{self.base_static_path}/{m}/{folder}" for m in ["bus", "metro", "tram"]]
+    def _get_path(self, folder: str) -> str:
+        return f"{self.base_static_path}/{folder}"
 
 @dataclass(frozen=True)
 class VehicleConfig(BaseConfig):
@@ -40,10 +40,10 @@ class VehicleConfig(BaseConfig):
     
     # Vehicle positions need access to routes and trips to get route names + headsigns
     @property
-    def route_paths(self) -> List[str]: return self._get_paths("routes")
+    def route_paths(self) -> List[str]: return self._get_path("routes")
     
     @property
-    def trip_paths(self) -> List[str]: return self._get_paths("trips")
+    def trip_paths(self) -> List[str]: return self._get_path("trips")
 
 @dataclass(frozen=True)
 class TripUpdateConfig(BaseConfig):
@@ -59,4 +59,4 @@ class TripUpdateConfig(BaseConfig):
     
     # Trip updates need access to stop times to compute delays
     @property
-    def stop_times_paths(self) -> List[str]: return self._get_paths("stop_times")
+    def stop_times_paths(self) -> List[str]: return self._get_path("stop_times")

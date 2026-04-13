@@ -8,6 +8,16 @@ import pyspark.sql.functions as F
 import redis
 
 
+_redis_pools: dict = {}
+
+
+def _get_redis_pool(host: str, port: int) -> redis.ConnectionPool:
+    key = (host, port)
+    if key not in _redis_pools:
+        _redis_pools[key] = redis.ConnectionPool(host=host, port=port, db=0)
+    return _redis_pools[key]
+
+
 
 class ReadMode(str, Enum):
     BATCH = "batch"
@@ -53,7 +63,7 @@ def write_to_redis(
             key_prefix: str,
             ttl_seconds: int,
             redis_host: str,
-            redis_port: str,
+            redis_port: int,
             field_mapper
 ):
     
@@ -68,7 +78,8 @@ def write_to_redis(
     :param field_mapper: determines which fields to put into reddis and how they are mapped
     
     """
-    r = redis.Redis(host=redis_host, port=redis_port, db=0)
+    pool = _get_redis_pool(redis_host, redis_port)
+    r = redis.Redis(connection_pool=pool)
 
     for row in rows:
         trip_id = getattr(row, "trip_id", None)
@@ -121,58 +132,34 @@ def load_schema(path: str) -> StructType:
     
 
 def join_gtfs_with_schedule(
-        spark: SparkSession, 
-        df: DataFrame, 
-        static_paths: List[str], 
-        join_keys: List[str], 
-        select_cols=None):
+    spark: SparkSession, 
+    df: DataFrame, 
+    static_path: str, 
+    join_keys: List[str], 
+    select_cols=None
+):
+    # 1. Load static data
+    static_df = spark.read.option("mergeSchema", "true").parquet(static_path).cache()
+
+    # 2. Alias both DataFrames to resolve ambiguity
+    main_alias = "main"
+    static_alias = "static"
     
-    """
-    
-    Function that joins the GTFS realtime feed with the schedule
-    
-    :param spark: sparksession used to perform computations
-    :param df: Dataframe containing GTFS realtime records
-    :param static_paths: Source for static data
-    :param join_keys: Keys used to join GTFS realtime with static data
-    :param select_cols: Optional to only select a subset of columns to optimise performance
-    """
-       
-    
-    # Read in static dfs
-    static_dfs = []
-    for p in static_paths:
-        sdf = spark.read.parquet(p)
-        if select_cols:
-            sdf = sdf.select(*select_cols)
-        static_dfs.append(sdf)
+    # 3. Join using the aliased DataFrames
+    joined = df.alias(main_alias).join(
+        static_df.alias(static_alias), 
+        on=join_keys, 
+        how="left"
+    )
 
-    
-    # Union into one df
-    static_df = static_dfs[0]
-    for sdf in static_dfs[1:]:
-        static_df = static_df.unionByName(sdf, allowMissingColumns=True)
+    if select_cols:
+        # We explicitly pull existing columns from the 'main' alias 
+        # to tell Spark exactly which 'stop_id' we want.
+        existing_cols = [f"{main_alias}.{c}" for c in df.columns]
+        
+        # Pull new columns specifically from the 'static' alias
+        new_cols = [f"{static_alias}.{c}" for c in select_cols if c not in df.columns]
+        
+        return joined.select(*existing_cols, *new_cols)
 
-
-    # Create aliases used for joining and resolving ambigious column references
-    rt = df.alias("rt")
-    st = static_df.alias("st")
-
-    # Create the condition of join. The assumption is made that join col names are always the same in both sources
-    join_condition = None
-    for k in join_keys:
-        cond = F.col(f"rt.{k}") == F.col(f"st.{k}")
-        join_condition = cond if join_condition is None else join_condition & cond
-
-    joined = rt.join(st, join_condition, how="left")
-
-    # To prevent ambigious columns, prioritise keeping columns from realtime source
-    rt_cols = [F.col(f"rt.{c}").alias(c) for c in rt.columns]
-
-    st_cols = [
-        F.col(f"st.{c}")
-        for c in st.columns
-        if c not in join_keys
-    ]
-
-    return joined.select(*rt_cols, *st_cols)
+    return joined
