@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 API_KEY = os.getenv("GTFS_API_KEY")
 
 class GTFSPoller:
-    
+
     def __init__(self, feed_name: str, mode: str, url: str, topic: str, publisher: KafkaPublisher, parser: GTFSRealtimeParserABC, interval_seconds=5):
         self.feed_name = feed_name
         self.mode = mode
@@ -20,6 +20,7 @@ class GTFSPoller:
         self.interval_seconds = interval_seconds
         self.publisher = publisher
         self.parser = parser
+        self._last_seen: dict[str, dict] = {}
 
     def fetch_raw_bytes(self):
         try:
@@ -30,6 +31,16 @@ class GTFSPoller:
             logger.error(f"[{self.feed_name}] Failed to fetch feed: {e}")
             return None
 
+    def _entity_changed(self, entity_id: str, message: dict) -> bool:
+        last = self._last_seen.get(entity_id)
+        if last is None:
+            return True
+        # The header timestamp increments on every poll regardless of entity state,
+        # so we exclude it from the comparison — only entity data determines a new event.
+        return message["entity_id"] != last["entity_id"] or \
+               {k: v for k, v in message.items() if k != "header"} != \
+               {k: v for k, v in last.items() if k != "header"}
+
     def poll_loop(self):
         logger.info(f"[{self.feed_name}] Polling started.")
         while True:
@@ -37,10 +48,15 @@ class GTFSPoller:
                 raw_bytes = self.fetch_raw_bytes()
                 if raw_bytes:
                     parsed_messages = self.parser.parse(raw_bytes)
+                    published = 0
                     for message in parsed_messages:
                         message["mode"] = self.mode
-                        self.publisher.publish_message(self.topic, message)
-                    logger.info(f"[{self.feed_name}] [{self.mode}] Published {len(parsed_messages)} messages.")
+                        entity_id = message["entity_id"]
+                        if self._entity_changed(entity_id, message):
+                            self.publisher.publish_message(self.topic, message)
+                            self._last_seen[entity_id] = message
+                            published += 1
+                    logger.info(f"[{self.feed_name}] [{self.mode}] Published {published}/{len(parsed_messages)} messages.")
             except Exception as e:
                 logger.error(f"[{self.feed_name}] [{self.mode}] Error in poll loop: {e}", exc_info=True)
             time.sleep(self.interval_seconds)
