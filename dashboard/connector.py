@@ -134,28 +134,3 @@ class DataConnector:
             })
         return pd.DataFrame(vehicles)
     
-
-    @staticmethod
-    def get_delay_trend():
-        """Generates realistic mock delay data for the last 24 hours."""
-        now = datetime.now()
-        hours = [now - timedelta(hours=i) for i in range(24)]
-        hours.reverse()
-        
-        delays = []
-        for h in hours:
-            hour_val = h.hour
-            # Baseline delay 1-2 mins
-            base = np.random.uniform(1, 2)
-            # Morning Peak (8-9 AM)
-            if 7 <= hour_val <= 9:
-                base += np.random.uniform(4, 7)
-            # Evening Peak (5-6 PM)
-            elif 16 <= hour_val <= 18:
-                base += np.random.uniform(5, 9)
-            # Late night
-            elif 0 <= hour_val <= 4:
-                base *= 0.5
-            delays.append(round(base, 2))
-            
-        return pd.DataFrame({"time": [h.strftime("%H:00") for h in hours], "delay": delays})

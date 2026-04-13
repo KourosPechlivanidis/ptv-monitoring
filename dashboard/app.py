@@ -173,7 +173,6 @@ app.layout = dmc.MantineProvider(
 
 @app.callback(
     [Output('live-map', 'figure'),
-     Output('delay-trend-chart', 'figure'),
      Output('otp-gauge', 'figure'),
      Output('problem-routes-list', 'children'),
      Output('problem-stops-list', 'children'),
@@ -189,7 +188,6 @@ def update_dashboard(n, selected_mode):
 
     # 1. DATA FETCHING
     df_live = DataConnector.get_live_locations(mode=query_mode)
-    df_delay = DataConnector.get_delay_trend()
     otp_val = DataConnector.get_otp_score(mode=query_mode)
     routes = DataConnector.get_problem_routes(mode=query_mode)
     stops = DataConnector.get_most_popular_stops(mode=query_mode)
@@ -252,16 +250,8 @@ def update_dashboard(n, selected_mode):
         latency_text = "N/A"
 
 
-    #5 Line with delay
-    # 2. Delay Trend Chart
-    delay_fig = go.Figure(go.Scatter(x=df_delay['time'], y=df_delay['delay'], fill='tozeroy', 
-                                     line=dict(color='#38bdf8', width=2), marker=dict(size=4)))
-    delay_fig.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', font=dict(color="white", size=10),
-                            margin=dict(l=30, r=10, t=10, b=30), xaxis=dict(showgrid=False), yaxis=dict(gridcolor="rgba(255,255,255,0.1)"))
-
     return (
         map_fig, 
-        delay_fig, 
         gauge_fig,
         create_route_leaderboard(routes), 
         create_stop_leaderboard(stops), 
